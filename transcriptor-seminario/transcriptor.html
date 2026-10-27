@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcriptor del seminario</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #1f6feb; --accent-soft: #e8f0fe; --rec: #d92d20; --ok: #12805c; --warn: #b54708;
+    --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1f27; --text: #e6e9ef; --muted: #98a2b3; --line: #2b323d;
+      --accent: #5b9dff; --accent-soft: #1d2a40; --rec: #f97066; --ok: #47cd89; --warn: #fdb022;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  select, input[type=text], input[type=password], textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; white-space: nowrap; }
+  .grow { flex: 1; }
+  #recBtn { font-weight: 600; min-width: 130px; }
+  #recBtn.recording { background: var(--rec); border-color: var(--rec); color: #fff; }
+  .meter { width: 90px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--ok); transition: width .1s; }
+  #status { color: var(--muted); font-size: 13px; }
+  #banner { display: none; padding: 8px 16px; background: #fef0c7; color: #7a2e0e; border-bottom: 1px solid #fedf89; font-size: 14px; }
+  @media (prefers-color-scheme: dark) { #banner { background: #4e1d09; color: #fedf89; border-color: #7a2e0e; } }
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 12px; padding: 12px 16px; min-height: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh 70vh; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .toolbar label { font-size: 13px; color: var(--muted); display: flex; gap: 4px; align-items: center; }
+  #transcript { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
+  .seg { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .seg .time { font: 12px var(--mono); color: var(--muted); padding-top: 3px; }
+  .seg .time .lang { display: inline-block; font-size: 10px; padding: 0 4px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-top: 2px; }
+  .seg .txt { outline: none; white-space: pre-wrap; }
+  .seg .txt:focus { background: var(--accent-soft); border-radius: 4px; }
+  .seg.pending .txt { color: var(--muted); font-style: italic; }
+  .seg.failed .txt { color: var(--warn); }
+  .seg.interim .txt { color: var(--muted); }
+  mark { background: #fde68a; color: inherit; border-radius: 3px; }
+  .empty { color: var(--muted); padding: 24px 4px; }
+  .empty ol { padding-left: 20px; }
+  #chatLog { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 8px 12px; border-radius: 10px; max-width: 95%; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; white-space: pre-wrap; }
+  .msg.bot { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); }
+  .msg.bot p { margin: 0 0 6px; } .msg.bot ul { margin: 4px 0 6px; padding-left: 20px; }
+  .msg.err { color: var(--warn); }
+  .quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+  .quick button { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
+  .ask { display: flex; gap: 8px; padding: 10px 12px; }
+  .ask textarea { flex: 1; resize: none; height: 60px; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); max-width: 640px; width: calc(100% - 32px); padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog h2 { margin: 0 0 12px; font-size: 18px; }
+  dialog .field { margin: 12px 0; display: flex; flex-direction: column; gap: 4px; }
+  dialog .field small { color: var(--muted); }
+  dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+  .hint { font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px 12px; }
+  .hint ol { margin: 4px 0; padding-left: 20px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Transcriptor del seminario</h1>
+  <select id="sessionSel" title="Ponencia actual"></select>
+  <button id="newSessionBtn" title="Crear una ponencia nueva">+ Nueva ponencia</button>
+  <button id="renameBtn" title="Renombrar ponencia">✎</button>
+  <span class="grow"></span>
+  <select id="sourceSel" title="De dónde sale el audio" style="max-width:260px">
+    <option value="tab">Audio de la pestaña del campus</option>
+    <option value="mic">Micrófono</option>
+    <option value="webspeech">Modo emergencia (gratis, Chrome, micrófono)</option>
+  </select>
+  <div class="meter" title="Nivel de audio"><div id="meterBar"></div></div>
+  <button id="recBtn" class="primary">● Empezar</button>
+  <span id="status">Listo</span>
+  <button id="settingsBtn" title="Ajustes">⚙ Ajustes</button>
+</header>
+<div id="banner"></div>
+<main>
+  <section class="panel">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Buscar en la transcripción…" style="flex:1;min-width:140px">
+      <label><input type="checkbox" id="follow" checked> Seguir en directo</label>
+      <button id="exportTxt">Exportar .txt</button>
+      <button id="exportAll" title="Copia de seguridad de todas las ponencias">Copia de seguridad</button>
+      <button id="importBtn" title="Restaurar una copia de seguridad">Restaurar</button>
+      <input type="file" id="importFile" accept=".json" hidden>
+    </div>
+    <div id="transcript"></div>
+  </section>
+  <aside class="panel">
+    <div class="toolbar">
+      <strong style="font-size:14px">Pregunta a la IA</strong>
+      <span class="grow"></span>
+      <label>Sobre <select id="scopeSel"><option value="session">esta ponencia</option><option value="all">todo el seminario</option></select></label>
+      <button id="clearChat" title="Borrar conversación">🗑</button>
+    </div>
+    <div id="chatLog"></div>
+    <div class="quick">
+      <button data-q="¿Qué se ha dicho en los últimos 5 minutos? Resúmelo en pocas líneas.">Últimos 5 min</button>
+      <button data-q="Haz un resumen estructurado de la ponencia hasta ahora: idea principal, apartados y conclusiones.">Resumen</button>
+      <button data-q="Enumera los conceptos, autores, normas, datos y referencias que se han mencionado, con la hora en que salieron.">Conceptos y referencias</button>
+      <button data-q="Propón 3 preguntas interesantes que podría hacer al ponente en el turno de preguntas.">Preguntas al ponente</button>
+      <button data-q="Traduce al castellano lo que se ha dicho en gallego en los últimos 10 minutos.">Traducir gallego</button>
+    </div>
+    <div class="ask">
+      <textarea id="question" placeholder="Escribe tu pregunta… (Enter para enviar, Mayús+Enter para salto de línea)"></textarea>
+      <button id="askBtn" class="primary">Enviar</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="settingsDlg">
+  <h2>Ajustes</h2>
+  <div class="hint">
+    <b>Primera vez</b> (unos 5 minutos):
+    <ol>
+      <li><b>Clave de Groq</b> (transcripción): entra en <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>, inicia sesión con Google y pulsa <i>Create API Key</i>. El plan gratuito cubre varias horas al día. Si quieres ir sobre seguro, añade una tarjeta en <i>Billing</i>: las 12 h saldrían por ~1,30 $.</li>
+      <li><b>Clave de Anthropic</b> (preguntas a Claude): en <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> → <i>API keys</i> → <i>Create key</i>.</li>
+    </ol>
+    Las claves se guardan solo en este navegador y se envían únicamente a Groq y a Anthropic.
+  </div>
+  <div class="field">
+    <label for="groqKey">Clave de Groq (empieza por <code>gsk_</code>)</label>
+    <input type="password" id="groqKey" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="anthropicKey">Clave de Anthropic (empieza por <code>sk-ant-</code>)</label>
+    <input type="password" id="anthropicKey" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="langSel">Idioma de las ponencias</label>
+    <select id="langSel">
+      <option value="auto">Automático: castellano y gallego mezclados (recomendado)</option>
+      <option value="gl">Solo gallego</option>
+      <option value="es">Solo castellano</option>
+    </select>
+    <small>En el modo emergencia solo se puede escuchar un idioma; en automático se usa gallego.</small>
+  </div>
+  <div class="field">
+    <label for="glossary">Vocabulario del seminario (opcional)</label>
+    <textarea id="glossary" rows="3" placeholder="Nombres de ponentes, siglas y términos técnicos, separados por comas. Ej.: Xunta de Galicia, LOMLOE, María Pérez Sotelo…"></textarea>
+    <small>Ayuda a que los nombres propios y los tecnicismos se escriban bien.</small>
+  </div>
+  <div class="field">
+    <label for="modelSel">Modelo para las preguntas</label>
+    <select id="modelSel">
+      <option value="claude-opus-5-5">Claude Opus 5.5: mejores respuestas (recomendado; céntimos por pregunta)</option>
+      <option value="claude-haiku-5-5">Claude Haiku 5.5: más económico y rápido</option>
+    </select>
+  </div>
+  <div class="row">
+    <span id="testResult" class="grow" style="font-size:13px;align-self:center"></span>
+    <button id="testBtn">Probar claves</button>
+    <button id="closeSettings" class="primary">Guardar</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+// ---------- Configuración ----------
+const CFG = {
+  minChunk: 8,        // s: longitud mínima de un fragmento antes de cortar en un silencio
+  maxChunk: 25,       // s: corte forzado
+  silenceHold: 0.6,   // s de silencio que marcan el final de una frase
+  rate: 16000,        // Hz del audio enviado a Whisper
+  sttUrl: "https://api.groq.com/openai/v1/audio/transcriptions",
+  sttModel: "whisper-large-v3",
+  claudeUrl: "https://api.anthropic.com/v1/messages",
+};
+const STORE_KEY = "transcriptor-seminario-v1";
+const LANG_LABEL = { spanish: "ES", galician: "GL", portuguese: "PT", english: "EN", catalan: "CA", es: "ES", gl: "GL" };
+const HALLUCINATIONS = [/amara\.org/i, /subt[ií]tul(os|ado|ación|ados)\s+(realizad|por|hech)/i, /gracias por (ver|vernos|su atención al v[ií]deo)/i, /suscr[ií]bete/i, /^\W*(gracias|grazas|muchas gracias|thank you)\W*$/i, /^\W*(\.\.\.|…)\W*$/];
+
+// ---------- Estado persistente ----------
+const $ = (id) => document.getElementById(id);
+let state = loadState();
+function loadState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && Array.isArray(s.sessions)) return s;
+  } catch (e) {}
+  return { settings: { groqKey: "", anthropicKey: "", lang: "auto", glossary: "", model: "claude-opus-5-5" }, sessions: [], currentId: null };
+}
+let saveFailed = false;
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); saveFailed = false; }
+  catch (e) {
+    if (!saveFailed) showBanner("⚠ No se pudo guardar en el navegador (¿memoria llena?). Pulsa «Copia de seguridad» ahora para no perder nada.");
+    saveFailed = true;
+  }
+}
+function current() { return state.sessions.find((s) => s.id === state.currentId); }
+function newSession(name) {
+  const s = { id: "s" + Date.now(), name: name || "Ponencia " + (state.sessions.length + 1), createdAt: Date.now(), segments: [], chat: [] };
+  state.sessions.push(s); state.currentId = s.id; save(); return s;
+}
+
+// ---------- Utilidades ----------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hhmmss = (ts) => new Date(ts).toLocaleTimeString("es-ES", { hour12: false });
+const hhmm = (ts) => hhmmss(ts).slice(0, 5);
+function setStatus(t) { $("status").textContent = t; }
+function showBanner(t) { const b = $("banner"); b.innerHTML = t; b.style.display = t ? "block" : "none"; }
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: type || "text/plain;charset=utf-8" }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function safeName(s) { return s.replace(/[^\p{L}\p{N} _-]+/gu, "").trim().replace(/\s+/g, "_") || "ponencia"; }
+
+// ---------- Interfaz: sesiones ----------
+function renderSessions() {
+  const sel = $("sessionSel");
+  sel.innerHTML = state.sessions.map((s) => `<option value="${s.id}">${esc(s.name)} · ${new Date(s.createdAt).toLocaleDateString("es-ES")}</option>`).join("");
+  sel.value = state.currentId || "";
+}
+$("sessionSel").onchange = (e) => { state.currentId = e.target.value; save(); renderTranscript(); renderChat(); };
+$("newSessionBtn").onclick = () => {
+  const name = prompt("Nombre de la ponencia (p. ej., «Mañana 1 · Dra. López»):", "Ponencia " + (state.sessions.length + 1));
+  if (name === null) return;
+  newSession(name.trim()); renderSessions(); renderTranscript(); renderChat();
+};
+$("renameBtn").onclick = () => {
+  const s = current(); if (!s) return;
+  const name = prompt("Nuevo nombre:", s.name);
+  if (name) { s.name = name.trim(); save(); renderSessions(); }
+};
+
+// ---------- Interfaz: transcripción ----------
+const pendingJobs = [];  // fragmentos en cola o con error (en memoria)
+let interimText = "";
+function segHTML(seg, q) {
+  let txt = esc(seg.text);
+  if (q) txt = txt.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), (m) => `<mark>${m}</mark>`);
+  const lang = seg.lang && LANG_LABEL[seg.lang] ? `<br><span class="lang">${LANG_LABEL[seg.lang]}</span>` : "";
+  return `<div class="seg" data-id="${seg.id}"><div class="time">${hhmmss(seg.ts)}${lang}</div><div class="txt" contenteditable="true" spellcheck="false">${txt}</div></div>`;
+}
+function renderTranscript() {
+  const s = current(), box = $("transcript"), q = $("search").value.trim();
+  if (!s) { box.innerHTML = ""; return; }
+  const segs = q ? s.segments.filter((x) => x.text.toLowerCase().includes(q.toLowerCase())) : s.segments;
+  let html = segs.map((x) => segHTML(x, q)).join("");
+  if (!q) {
+    for (const j of pendingJobs.filter((j) => j.sessionId === s.id)) {
+      html += j.failed
+        ? `<div class="seg failed"><div class="time">${hhmmss(j.ts)}</div><div class="txt">⚠ No se pudo transcribir (${esc(j.error || "error")}). <button data-retry="${j.id}">Reintentar</button></div></div>`
+        : `<div class="seg pending"><div class="time">${hhmmss(j.ts)}</div><div class="txt">transcribiendo…</div></div>`;
+    }
+    if (interimText) html += `<div class="seg interim"><div class="time">ahora</div><div class="txt">${esc(interimText)}</div></div>`;
+  }
+  if (!html) html = emptyHelp();
+  box.innerHTML = html;
+  if ($("follow").checked && !q) box.scrollTop = box.scrollHeight;
+}
+function emptyHelp() {
+  return `<div class="empty"><b>Cómo empezar:</b><ol>
+    <li>Abre la ponencia del campus remoto en otra pestaña de Chrome o Edge (mejor en otra ventana, para ver las dos a la vez).</li>
+    <li>Aquí, deja seleccionado «Audio de la pestaña del campus» y pulsa <b>● Empezar</b>.</li>
+    <li>En la ventana de Chrome elige <b>Pestaña de Chrome</b>, selecciona la del campus, <b>activa «Compartir también el audio de la pestaña»</b> y pulsa <i>Compartir</i>.</li>
+    <li>El texto aparece cada 10–25 segundos. Se guarda solo; puedes corregir cualquier fragmento haciendo clic en él.</li>
+  </ol>Consejo: haz una prueba antes con un vídeo de YouTube en gallego.</div>`;
+}
+$("search").oninput = renderTranscript;
+$("transcript").addEventListener("focusout", (e) => {
+  const el = e.target.closest(".txt[contenteditable]"); if (!el) return;
+  const id = el.parentElement.dataset.id, s = current();
+  const seg = s && s.segments.find((x) => x.id === id);
+  if (seg && seg.text !== el.textContent) { seg.text = el.textContent; save(); }
+});
+$("transcript").addEventListener("click", (e) => {
+  const id = e.target.dataset && e.target.dataset.retry; if (!id) return;
+  const j = pendingJobs.find((x) => x.id === id);
+  if (j) { j.failed = false; j.attempts = 0; renderTranscript(); pump(); }
+});
+function addSegment(sessionId, ts, text, lang) {
+  const s = state.sessions.find((x) => x.id === sessionId); if (!s) return;
+  const seg = { id: "g" + ts + Math.random().toString(36).slice(2, 6), ts, text, lang };
+  let i = s.segments.length;
+  while (i > 0 && s.segments[i - 1].ts > ts) i--;   // mantener orden cronológico
+  s.segments.splice(i, 0, seg);
+  save();
+  if (s.id === state.currentId) renderTranscript();
+}
+
+// ---------- Exportar / importar ----------
+$("exportTxt").onclick = () => {
+  const s = current(); if (!s) return;
+  const body = s.segments.map((x) => `[${hhmmss(x.ts)}] ${x.text}`).join("\n");
+  download(`${safeName(s.name)}.txt`, `${s.name}\n${new Date(s.createdAt).toLocaleString("es-ES")}\n\n${body}\n`);
+};
+$("exportAll").onclick = () => {
+  const copy = { sessions: state.sessions, exportedAt: Date.now() };
+  download(`seminario_copia_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.json`, JSON.stringify(copy, null, 1), "application/json");
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    let added = 0;
+    for (const s of data.sessions || []) if (!state.sessions.some((x) => x.id === s.id)) { state.sessions.push(s); added++; }
+    state.sessions.sort((a, b) => a.createdAt - b.createdAt);
+    save(); renderSessions(); renderTranscript(); alert(`Restauradas ${added} ponencias.`);
+  } catch (err) { alert("El archivo no es una copia válida: " + err.message); }
+  e.target.value = "";
+};
+
+// ---------- Captura de audio ----------
+let rec = null;   // {stream, ctx, proc, src, mute}
+let wakeLock = null;
+let chunk = null; // {parts, len, ts, speech, silence}
+let noiseFloor = 0.01;
+let rsLeft = new Float32Array(0);
+
+async function startCapture(source) {
+  let stream;
+  if (source === "tab") {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      systemAudio: "include", selfBrowserSurface: "exclude", preferCurrentTab: false,
+    });
+    if (!stream.getAudioTracks().length) {
+      stream.getTracks().forEach((t) => t.stop());
+      throw new Error("No se ha compartido el audio. Vuelve a pulsar Empezar, elige la pestaña del campus y activa «Compartir también el audio de la pestaña».");
+    }
+  } else {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  }
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  proc.onaudioprocess = (e) => onAudio(e.inputBuffer.getChannelData(0), ctx.sampleRate);
+  stream.getAudioTracks()[0].addEventListener("ended", () => {
+    if (rec) { stopRecording(); showBanner("⚠ Se dejó de compartir el audio. Pulsa <b>● Empezar</b> para continuar en la misma ponencia."); }
+  });
+  rsLeft = new Float32Array(0); chunk = null;
+  rec = { stream, ctx, proc, src, mute };
+}
+function stopCapture() {
+  if (!rec) return;
+  flushChunk(true);
+  try { rec.proc.disconnect(); rec.src.disconnect(); rec.ctx.close(); } catch (e) {}
+  rec.stream.getTracks().forEach((t) => t.stop());
+  rec = null; $("meterBar").style.width = "0";
+}
+function downsample(input, inRate) {
+  const ratio = inRate / CFG.rate;
+  const buf = new Float32Array(rsLeft.length + input.length);
+  buf.set(rsLeft); buf.set(input, rsLeft.length);
+  const outLen = Math.floor(buf.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(buf.length, Math.floor((i + 1) * ratio));
+    let sum = 0; for (let j = a; j < b; j++) sum += buf[j];
+    out[i] = sum / Math.max(1, b - a);
+  }
+  rsLeft = buf.slice(Math.floor(outLen * ratio));
+  return out;
+}
+function onAudio(input, inRate) {
+  const data = downsample(input, inRate);
+  if (!data.length) return;
+  let sq = 0; for (let i = 0; i < data.length; i++) sq += data[i] * data[i];
+  const rms = Math.sqrt(sq / data.length);
+  $("meterBar").style.width = Math.min(100, rms * 600) + "%";
+  if (rms < noiseFloor) noiseFloor = 0.9 * noiseFloor + 0.1 * rms; else noiseFloor *= 1.0015;
+  const silent = rms < Math.max(0.004, noiseFloor * 2.5);
+  const dur = data.length / CFG.rate;
+  if (!chunk) chunk = { parts: [], len: 0, ts: Date.now(), speech: 0, silence: 0 };
+  chunk.parts.push(data); chunk.len += data.length;
+  if (silent) chunk.silence += dur; else { chunk.speech += dur; chunk.silence = 0; }
+  const total = chunk.len / CFG.rate;
+  if ((total >= CFG.minChunk && chunk.silence >= CFG.silenceHold) || total >= CFG.maxChunk) flushChunk(false);
+}
+function flushChunk(final) {
+  const c = chunk; chunk = null;
+  if (!c || c.speech < 0.6) return;   // solo silencio: no se envía
+  const pcm = new Float32Array(c.len); let o = 0;
+  for (const p of c.parts) { pcm.set(p, o); o += p.length; }
+  enqueue({ id: "j" + c.ts, sessionId: state.currentId, ts: c.ts, blob: encodeWav(pcm, CFG.rate), attempts: 0 });
+}
+function encodeWav(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data");
+  v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) { const s = Math.max(-1, Math.min(1, samples[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// ---------- Cola de transcripción (Groq Whisper) ----------
+let pumping = false, keyProblem = false;
+function enqueue(job) { pendingJobs.push(job); if (job.sessionId === state.currentId) renderTranscript(); pump(); }
+async function pump() {
+  if (pumping) return; pumping = true;
+  try {
+    while (true) {
+      const job = pendingJobs.find((j) => !j.failed);
+      if (!job || keyProblem) break;
+      try {
+        const { text, lang } = await transcribe(job);
+        pendingJobs.splice(pendingJobs.indexOf(job), 1);
+        if (text) addSegment(job.sessionId, job.ts, text, lang);
+        else if (job.sessionId === state.currentId) renderTranscript();
+        if (!keyProblem) showBanner("");
+      } catch (err) {
+        job.attempts++;
+        if (err.auth) { keyProblem = true; showBanner("⚠ La clave de Groq no es válida. Revísala en ⚙ Ajustes; el audio grabado queda en espera y se transcribirá después."); break; }
+        if (err.rate) { showBanner("⏳ Groq ha limitado las peticiones (límite gratuito). La herramienta reintenta sola; si dura mucho, añade una tarjeta en console.groq.com → Billing."); await sleep(err.wait); continue; }
+        if (job.attempts >= 4) { job.failed = true; job.error = err.message; if (job.sessionId === state.currentId) renderTranscript(); continue; }
+        showBanner("⚠ Problema de conexión con Groq (" + esc(err.message) + "). Reintentando…");
+        await sleep(2000 * 2 ** job.attempts);
+      }
+    }
+  } finally { pumping = false; updateQueueStatus(); }
+}
+function whisperPrompt(sessionId) {
+  const s = state.sessions.find((x) => x.id === sessionId);
+  const prev = s ? s.segments.slice(-3).map((x) => x.text).join(" ").slice(-220) : "";
+  const gl = (state.settings.glossary || "").slice(0, 300);
+  return ("Seminario universitario da Universidade de Vigo, en galego e castelán. " + (gl ? gl + ". " : "") + prev).trim();
+}
+async function transcribe(job, forceLang) {
+  const key = state.settings.groqKey.trim();
+  if (!key) { const e = new Error("falta la clave de Groq"); e.auth = true; throw e; }
+  const lang = forceLang || (state.settings.lang !== "auto" ? state.settings.lang : "");
+  const fd = new FormData();
+  fd.append("file", job.blob, "audio.wav");
+  fd.append("model", CFG.sttModel);
+  fd.append("response_format", "verbose_json");
+  fd.append("temperature", "0");
+  fd.append("prompt", whisperPrompt(job.sessionId));
+  if (lang) fd.append("language", lang);
+  let res;
+  try { res = await fetch(CFG.sttUrl, { method: "POST", headers: { Authorization: "Bearer " + key }, body: fd }); }
+  catch (e) { throw new Error("sin conexión"); }
+  if (res.status === 401 || res.status === 403) { const e = new Error("clave no válida"); e.auth = true; throw e; }
+  if (res.status === 429) {
+    const e = new Error("límite de peticiones"); e.rate = true;
+    e.wait = Math.min(60, parseFloat(res.headers.get("retry-after")) || 15) * 1000; throw e;
+  }
+  if (!res.ok) { let m = "HTTP " + res.status; try { m = (await res.json()).error.message || m; } catch (x) {} throw new Error(m); }
+  const data = await res.json();
+  const detected = (data.language || lang || "").toLowerCase();
+  // El gallego a veces se detecta como portugués: se repite fijando gallego.
+  if (!forceLang && !lang && detected === "portuguese") return transcribe(job, "gl");
+  let text;
+  if (Array.isArray(data.segments) && data.segments.length) {
+    text = data.segments
+      .filter((sg) => !(sg.no_speech_prob > 0.6 && sg.avg_logprob < -0.7) && !(sg.compression_ratio > 2.6))
+      .map((sg) => sg.text.trim()).join(" ");
+  } else text = (data.text || "").trim();
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length < 90 && HALLUCINATIONS.some((r) => r.test(text))) text = "";
+  return { text, lang: detected };
+}
+function updateQueueStatus() {
+  const n = pendingJobs.filter((j) => !j.failed).length;
+  if (recording) setStatus(n > 1 ? `Grabando · ${n} fragmentos en cola` : "Grabando");
+  else setStatus(n ? `Terminando de transcribir (${n})…` : "Listo");
+}
+setInterval(updateQueueStatus, 2000);
+
+// ---------- Modo emergencia: reconocimiento de voz del navegador ----------
+let speech = null;
+function startWebSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) throw new Error("Este navegador no tiene reconocimiento de voz. Usa Chrome.");
+  const r = new SR();
+  r.lang = state.settings.lang === "es" ? "es-ES" : "gl-ES";
+  r.continuous = true; r.interimResults = true;
+  const sessionId = state.currentId;
+  let startTs = Date.now();
+  r.onresult = (ev) => {
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const res = ev.results[i];
+      if (res.isFinal) { const t = res[0].transcript.trim(); if (t) addSegment(sessionId, startTs, t, r.lang.slice(0, 2)); startTs = Date.now(); }
+      else interim += res[0].transcript;
+    }
+    interimText = interim; renderTranscript();
+  };
+  r.onerror = (ev) => { if (ev.error === "not-allowed" || ev.error === "service-not-allowed") { showBanner("⚠ Chrome no permite usar el micrófono. Concede el permiso y vuelve a intentarlo."); stopRecording(); } };
+  r.onend = () => { if (speech === r) try { r.start(); } catch (e) {} };
+  r.start(); speech = r;
+}
+function stopWebSpeech() { if (speech) { const r = speech; speech = null; r.stop(); interimText = ""; } }
+
+// ---------- Botón Empezar / Parar ----------
+let recording = false;
+$("recBtn").onclick = () => (recording ? stopRecording() : startRecording());
+async function startRecording() {
+  const source = $("sourceSel").value;
+  if (source !== "webspeech" && !state.settings.groqKey) { openSettings(); return; }
+  if (!current()) { newSession(); renderSessions(); }
+  showBanner(""); keyProblem = false;
+  try {
+    if (source === "webspeech") startWebSpeech(); else await startCapture(source);
+  } catch (err) {
+    if (err.name !== "NotAllowedError") alert(err.message); else setStatus("Captura cancelada");
+    return;
+  }
+  recording = true;
+  $("recBtn").textContent = "■ Parar"; $("recBtn").classList.add("recording");
+  $("sourceSel").disabled = true; $("sessionSel").disabled = true; $("newSessionBtn").disabled = true;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  updateQueueStatus(); renderTranscript();
+}
+function stopRecording() {
+  recording = false;
+  stopCapture(); stopWebSpeech();
+  $("recBtn").textContent = "● Empezar"; $("recBtn").classList.remove("recording");
+  $("sourceSel").disabled = false; $("sessionSel").disabled = false; $("newSessionBtn").disabled = false;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  updateQueueStatus(); renderTranscript();
+}
+window.addEventListener("beforeunload", (e) => {
+  if (recording || pendingJobs.length) { e.preventDefault(); e.returnValue = ""; }
+});
+
+// ---------- Ajustes ----------
+function openSettings() {
+  const st = state.settings;
+  $("groqKey").value = st.groqKey; $("anthropicKey").value = st.anthropicKey;
+  $("langSel").value = st.lang; $("glossary").value = st.glossary; $("modelSel").value = st.model;
+  $("testResult").textContent = "";
+  $("settingsDlg").showModal();
+}
+function readSettings() {
+  Object.assign(state.settings, {
+    groqKey: $("groqKey").value.trim(), anthropicKey: $("anthropicKey").value.trim(),
+    lang: $("langSel").value, glossary: $("glossary").value.trim(), model: $("modelSel").value,
+  });
+  save();
+}
+$("settingsBtn").onclick = openSettings;
+$("closeSettings").onclick = () => { readSettings(); $("settingsDlg").close(); if (keyProblem) { keyProblem = false; showBanner(""); pump(); } };
+$("testBtn").onclick = async () => {
+  readSettings();
+  const out = [];
+  $("testResult").textContent = "Probando…";
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: "Bearer " + state.settings.groqKey } });
+    out.push(r.ok ? "Groq ✅" : `Groq ❌ (${r.status === 401 ? "clave no válida" : "HTTP " + r.status})`);
+  } catch (e) { out.push("Groq ❌ (bloqueado por el navegador o sin conexión: usa el modo emergencia)"); }
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/models", { headers: claudeHeaders(false) });
+    out.push(r.ok ? "Claude ✅" : `Claude ❌ (${r.status === 401 ? "clave no válida" : "HTTP " + r.status})`);
+  } catch (e) { out.push("Claude ❌ (sin conexión)"); }
+  $("testResult").textContent = out.join(" · ");
+};
+
+// ---------- Chat con Claude ----------
+const SYSTEM_PROMPT = `Ayudas a una persona que sigue en directo un seminario universitario online (Universidade de Vigo). Recibes la transcripción automática de las ponencias, en castellano y en gallego, con la hora de cada fragmento entre corchetes.
+
+- Responde en castellano, salvo que te pregunten en gallego.
+- Básate en la transcripción. Si algo no aparece en ella, dilo claramente en vez de suponerlo; puedes añadir contexto general si lo marcas como tal.
+- Cita entre corchetes la hora de los fragmentos en los que te apoyas, p. ej. [10:42].
+- La transcripción es automática y puede tener errores en nombres propios y tecnicismos. Si un fragmento parece mal reconocido, interprétalo con prudencia y avisa.
+- La persona lee tu respuesta mientras escucha la ponencia: sé directo y conciso, y usa listas cortas cuando ayuden.`;
+
+function claudeHeaders(withFallback) {
+  const h = {
+    "content-type": "application/json",
+    "x-api-key": state.settings.anthropicKey,
+    "anthropic-version": "2026-10-21",
+    "anthropic-dangerous-direct-browser-access": "true",
+  };
+  if (withFallback) h["anthropic-beta"] = "server-side-fallback-2026-07-01";
+  return h;
+}
+function transcriptBlocks(scope) {
+  const sessions = scope === "all" ? [...state.sessions].sort((a, b) => a.createdAt - b.createdAt) : [current()].filter(Boolean);
+  const lines = [];
+  for (const s of sessions) {
+    lines.push(`=== Ponencia: ${s.name} (${new Date(s.createdAt).toLocaleDateString("es-ES")}) ===`);
+    for (const x of s.segments) lines.push(`[${hhmmss(x.ts)}] ${x.text}`);
+  }
+  // Bloques fijos de 80 líneas: los ya completos no cambian y se reaprovechan con la caché de prompts.
+  const blocks = [];
+  for (let i = 0; i < lines.length; i += 80) blocks.push({ type: "text", text: lines.slice(i, i + 80).join("\n") + "\n" });
+  const lastFull = Math.floor(lines.length / 80) - 1;
+  if (lastFull >= 0) blocks[lastFull].cache_control = { type: "ephemeral" };
+  return { blocks, count: lines.length - sessions.length };
+}
+function renderChat() {
+  const s = current(), log = $("chatLog");
+  const msgs = s ? s.chat : [];
+  log.innerHTML = msgs.length ? msgs.map((m) => m.role === "user"
+    ? `<div class="msg user">${esc(m.text)}</div>`
+    : `<div class="msg bot${m.error ? " err" : ""}">${md(m.text)}</div>`).join("")
+    : `<div class="empty">Pregunta lo que quieras sobre lo que se ha dicho: «¿Qué ha dicho sobre la evaluación?», «Explícame el concepto de…», «¿Qué autores ha citado?». También puedes usar los botones rápidos de abajo.</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+function md(t) {
+  const lines = esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").split("\n");
+  let html = "", inList = false;
+  for (const l of lines) {
+    const m = l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)/);
+    if (m) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${m[1]}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    const h = l.match(/^#{1,4}\s+(.*)/);
+    if (h) html += `<p><b>${h[1]}</b></p>`; else if (l.trim()) html += `<p>${l}</p>`;
+  }
+  return html + (inList ? "</ul>" : "");
+}
+let asking = false;
+async function ask(question) {
+  question = question.trim(); if (!question || asking) return;
+  if (!state.settings.anthropicKey) { openSettings(); return; }
+  if (!current()) { newSession(); renderSessions(); }
+  const s = current(), scope = $("scopeSel").value;
+  const { blocks, count } = transcriptBlocks(scope);
+  const history = s.chat.filter((m) => !m.error).slice(-6)
+    .map((m) => (m.role === "user" ? "P: " : "R: ") + m.text.slice(0, 1500)).join("\n");
+  s.chat.push({ role: "user", text: question });
+  const answer = { role: "assistant", text: "" };
+  s.chat.push(answer); renderChat();
+  const bubble = $("chatLog").lastElementChild;
+  bubble.innerHTML = "<i>pensando…</i>";
+  asking = true; $("askBtn").disabled = true;
+  const content = [
+    { type: "text", text: count ? "TRANSCRIPCIÓN (automática):\n" : "TRANSCRIPCIÓN: todavía no hay texto transcrito.\n" },
+    ...blocks,
+    { type: "text", text: (history ? `Conversación anterior:\n${history}\n\n` : "") + `Hora actual: ${hhmm(Date.now())}.\n\nPregunta: ${question}` },
+  ];
+  const model = state.settings.model;
+  const body = { model, max_tokens: 8000, stream: true, system: SYSTEM_PROMPT, messages: [{ role: "user", content }], output_config: { effort: "low" } };
+  try {
+    let useFallback = model === "claude-opus-5-5";
+    let res;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const b = useFallback ? { ...body, fallbacks: "default" } : body;
+      res = await fetch(CFG.claudeUrl, { method: "POST", headers: claudeHeaders(useFallback), body: JSON.stringify(b) });
+      if (res.ok) break;
+      const errText = await res.text();
+      if (res.status === 400 && useFallback && /fallback/i.test(errText)) { useFallback = false; continue; }
+      if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < 2) { await sleep(3000 * (attempt + 1)); continue; }
+      let m = "HTTP " + res.status; try { m = JSON.parse(errText).error.message; } catch (x) {}
+      if (res.status === 401) m = "La clave de Anthropic no es válida. Revísala en ⚙ Ajustes.";
+      if (res.status === 429 || res.status === 529) m = "Claude está saturado en este momento. Vuelve a preguntar en unos segundos.";
+      throw new Error(m);
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "", stop = "";
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const evt = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        const line = evt.split("\n").find((l) => l.startsWith("data:")); if (!line) continue;
+        let d; try { d = JSON.parse(line.slice(5)); } catch (e) { continue; }
+        if (d.type === "content_block_delta" && d.delta.type === "text_delta") { answer.text += d.delta.text; bubble.innerHTML = md(answer.text); $("chatLog").scrollTop = 1e9; }
+        else if (d.type === "message_delta" && d.delta.stop_reason) stop = d.delta.stop_reason;
+        else if (d.type === "error") throw new Error(d.error.message || "error en la respuesta");
+      }
+    }
+    if (stop === "refusal" && !answer.text) answer.text = "Claude no ha podido responder a esta pregunta. Prueba a formularla de otra manera.";
+    if (stop === "max_tokens") answer.text += "\n\n(La respuesta se ha cortado por ser demasiado larga.)";
+    if (!answer.text) answer.text = "(Sin respuesta.)";
+  } catch (err) {
+    answer.text = "⚠ " + (err.message === "Failed to fetch" ? "Sin conexión con Claude." : err.message);
+    answer.error = true;
+  } finally {
+    asking = false; $("askBtn").disabled = false; save(); renderChat();
+  }
+}
+$("askBtn").onclick = () => { const q = $("question").value; $("question").value = ""; ask(q); };
+$("question").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("askBtn").click(); } });
+document.querySelectorAll(".quick button").forEach((b) => (b.onclick = () => ask(b.dataset.q)));
+$("clearChat").onclick = () => { const s = current(); if (s && confirm("¿Borrar la conversación de esta ponencia?")) { s.chat = []; save(); renderChat(); } };
+
+// ---------- Inicio ----------
+if (!state.sessions.length) newSession("Ponencia 1");
+if (!current()) state.currentId = state.sessions[state.sessions.length - 1].id;
+renderSessions(); renderTranscript(); renderChat();
+if (!state.settings.groqKey || !state.settings.anthropicKey) openSettings();
+</script>
+</body>
+</html>
