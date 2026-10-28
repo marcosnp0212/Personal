@@ -137,6 +137,13 @@
     Las claves se guardan solo en este navegador y se envían únicamente a Groq y a Anthropic.
   </div>
   <div class="field">
+    <label for="engineSel">Motor de transcripción</label>
+    <select id="engineSel">
+      <option value="local">Mi PC: Whisper en la tarjeta NVIDIA (gratis, sin clave; requiere arrancar.bat)</option>
+      <option value="groq">Groq en internet (requiere clave)</option>
+    </select>
+  </div>
+  <div class="field">
     <label for="groqKey">Clave de Groq (empieza por <code>gsk_</code>)</label>
     <input type="password" id="groqKey" autocomplete="off">
   </div>
@@ -186,6 +193,8 @@ const CFG = {
 };
 const STORE_KEY = "transcriptor-seminario-v1";
 const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
+const LOCAL_URL = location.protocol.startsWith("http") ? location.origin : "http://127.0.0.1:8000";
+const useLocal = () => state.settings.engine === "local";
 const LANG_LABEL = { spanish: "ES", galician: "GL", portuguese: "PT", english: "EN", catalan: "CA", es: "ES", gl: "GL" };
 const HALLUCINATIONS = [/amara\.org/i, /subt[ií]tul(os|ado|ación|ados)\s+(realizad|por|hech)/i, /gracias por (ver|vernos|su atención al v[ií]deo)/i, /suscr[ií]bete/i, /^\W*(gracias|grazas|muchas gracias|thank you)\W*$/i, /^\W*(\.\.\.|…)\W*$/];
 
@@ -454,7 +463,7 @@ function whisperPrompt(sessionId) {
   return ("Seminario universitario da Universidade de Vigo, en galego e castelán. " + (gl ? gl + ". " : "") + prev).trim();
 }
 async function transcribe(job, forceLang) {
-  const key = state.settings.groqKey.trim();
+  const key = useLocal() ? "local" : state.settings.groqKey.trim();
   if (!key) { const e = new Error("falta la clave de Groq"); e.auth = true; throw e; }
   const lang = forceLang || (state.settings.lang !== "auto" ? state.settings.lang : "");
   const fd = new FormData();
@@ -465,8 +474,8 @@ async function transcribe(job, forceLang) {
   fd.append("prompt", whisperPrompt(job.sessionId));
   if (lang) fd.append("language", lang);
   let res;
-  try { res = await fetch(CFG.sttUrl, { method: "POST", headers: { Authorization: "Bearer " + key }, body: fd }); }
-  catch (e) { throw new Error("sin conexión"); }
+  try { res = await fetch(useLocal() ? LOCAL_URL + "/v1/audio/transcriptions" : CFG.sttUrl, { method: "POST", headers: { Authorization: "Bearer " + key }, body: fd }); }
+  catch (e) { throw new Error(useLocal() ? "el servidor local no responde: ¿está abierta la ventana de arrancar.bat?" : "sin conexión"); }
   if (res.status === 401 || res.status === 403) { const e = new Error("clave no válida"); e.auth = true; throw e; }
   if (res.status === 429) {
     const e = new Error("límite de peticiones"); e.rate = true;
@@ -524,7 +533,7 @@ let recording = false;
 $("recBtn").onclick = () => (recording ? stopRecording() : startRecording());
 async function startRecording() {
   const source = $("sourceSel").value;
-  if (source !== "webspeech" && !state.settings.groqKey) { openSettings(); return; }
+  if (source !== "webspeech" && !useLocal() && !state.settings.groqKey) { openSettings(); return; }
   if (!current()) { newSession(); renderSessions(); }
   showBanner(""); keyProblem = false;
   try {
@@ -554,14 +563,14 @@ window.addEventListener("beforeunload", (e) => {
 // ---------- Ajustes ----------
 function openSettings() {
   const st = state.settings;
-  $("groqKey").value = st.groqKey; $("anthropicKey").value = st.anthropicKey;
+  $("engineSel").value = st.engine; $("groqKey").value = st.groqKey; $("anthropicKey").value = st.anthropicKey;
   $("langSel").value = st.lang; $("glossary").value = st.glossary; $("modelSel").value = st.model;
   $("testResult").textContent = "";
   $("settingsDlg").showModal();
 }
 function readSettings() {
   Object.assign(state.settings, {
-    groqKey: $("groqKey").value.trim(), anthropicKey: $("anthropicKey").value.trim(),
+    engine: $("engineSel").value, groqKey: $("groqKey").value.trim(), anthropicKey: $("anthropicKey").value.trim(),
     lang: $("langSel").value, glossary: $("glossary").value.trim(), model: $("modelSel").value,
   });
   save();
@@ -572,7 +581,10 @@ $("testBtn").onclick = async () => {
   readSettings();
   const out = [];
   $("testResult").textContent = "Probando…";
-  try {
+  if (useLocal()) {
+    try { const r = await fetch(LOCAL_URL + "/v1/models"); const d = await r.json(); out.push(`Whisper local ✅ (${d.data[0].device === "cuda" ? "NVIDIA" : "CPU, más lento"})`); }
+    catch (e) { out.push("Whisper local ❌ (abre arrancar.bat y entra en http://127.0.0.1:8000)"); }
+  } else try {
     const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: "Bearer " + state.settings.groqKey } });
     out.push(r.ok ? "Groq ✅" : `Groq ❌ (${r.status === 401 ? "clave no válida" : "HTTP " + r.status})`);
   } catch (e) { out.push("Groq ❌ (bloqueado por el navegador o sin conexión: usa el modo emergencia)"); }
@@ -705,6 +717,7 @@ document.querySelectorAll(".quick button").forEach((b) => (b.onclick = () => ask
 $("clearChat").onclick = () => { const s = current(); if (s && confirm("¿Borrar la conversación de esta ponencia?")) { s.chat = []; save(); renderChat(); } };
 
 // ---------- Inicio ----------
+if (!state.settings.engine) state.settings.engine = location.hostname === "127.0.0.1" ? "local" : "groq";
 if (IS_FIREFOX) {
   for (const v of ["tab", "webspeech"]) {
     const o = $("sourceSel").querySelector(`option[value=${v}]`);
@@ -715,7 +728,7 @@ if (IS_FIREFOX) {
 if (!state.sessions.length) newSession("Ponencia 1");
 if (!current()) state.currentId = state.sessions[state.sessions.length - 1].id;
 renderSessions(); renderTranscript(); renderChat();
-if (!state.settings.groqKey || !state.settings.anthropicKey) openSettings();
+if ((!useLocal() && !state.settings.groqKey) || !state.settings.anthropicKey) openSettings();
 </script>
 </body>
 </html>
