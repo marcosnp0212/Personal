@@ -82,7 +82,8 @@
   <span class="grow"></span>
   <select id="sourceSel" title="De dónde sale el audio" style="max-width:260px">
     <option value="tab">Audio de la pestaña del campus</option>
-    <option value="mic">Micrófono</option>
+    <option value="system">Audio del sistema («Mezcla estéreo»)</option>
+    <option value="mic">Micrófono (con altavoces)</option>
     <option value="webspeech">Modo emergencia (gratis, Chrome, micrófono)</option>
   </select>
   <div class="meter" title="Nivel de audio"><div id="meterBar"></div></div>
@@ -184,6 +185,7 @@ const CFG = {
   claudeUrl: "https://api.anthropic.com/v1/messages",
 };
 const STORE_KEY = "transcriptor-seminario-v1";
+const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
 const LANG_LABEL = { spanish: "ES", galician: "GL", portuguese: "PT", english: "EN", catalan: "CA", es: "ES", gl: "GL" };
 const HALLUCINATIONS = [/amara\.org/i, /subt[ií]tul(os|ado|ación|ados)\s+(realizad|por|hech)/i, /gracias por (ver|vernos|su atención al v[ií]deo)/i, /suscr[ií]bete/i, /^\W*(gracias|grazas|muchas gracias|thank you)\W*$/i, /^\W*(\.\.\.|…)\W*$/];
 
@@ -270,10 +272,18 @@ function renderTranscript() {
   if ($("follow").checked && !q) box.scrollTop = box.scrollHeight;
 }
 function emptyHelp() {
+  if (IS_FIREFOX) return `<div class="empty"><b>Cómo empezar en Firefox:</b><ol>
+    <li>Firefox no deja capturar el audio de una pestaña. Lo más limpio es la <b>«Mezcla estéreo»</b> de Windows, que capta todo lo que suena en el portátil:
+      Configuración → Sistema → Sonido → <i>Más opciones de sonido</i> → pestaña <i>Grabar</i> → clic derecho → <i>Mostrar dispositivos deshabilitados</i> → clic derecho en <b>Mezcla estéreo</b> → <i>Habilitar</i>.</li>
+    <li>Aquí, elige «Audio del sistema («Mezcla estéreo»)» y pulsa <b>● Empezar</b>. En el permiso de Firefox, elige <b>Mezcla estéreo</b> como micrófono y pulsa <i>Permitir</i>.</li>
+    <li>Abre la ponencia del campus en otra ventana. Puedes usar auriculares; se capta igual.</li>
+    <li>Si no aparece «Mezcla estéreo», elige «Micrófono (con altavoces)» y pon el sonido por los altavoces, a buen volumen.</li>
+  </ol>La barrita junto al botón debe moverse cuando habla el ponente. El texto aparece cada 10–25 segundos.</div>`;
   return `<div class="empty"><b>Cómo empezar:</b><ol>
     <li>Abre la ponencia del campus remoto en otra pestaña de Chrome o Edge (mejor en otra ventana, para ver las dos a la vez).</li>
     <li>Aquí, deja seleccionado «Audio de la pestaña del campus» y pulsa <b>● Empezar</b>.</li>
     <li>En la ventana de Chrome elige <b>Pestaña de Chrome</b>, selecciona la del campus, <b>activa «Compartir también el audio de la pestaña»</b> y pulsa <i>Compartir</i>.</li>
+    <li>¿Usas Firefox para el campus? Abre esta herramienta en <b>Edge</b>, elige <b>Pantalla completa</b> y activa <b>«Compartir también el audio del sistema»</b>.</li>
     <li>El texto aparece cada 10–25 segundos. Se guarda solo; puedes corregir cualquier fragmento haciendo clic en él.</li>
   </ol>Consejo: haz una prueba antes con un vídeo de YouTube en gallego.</div>`;
 }
@@ -342,7 +352,8 @@ async function startCapture(source) {
       throw new Error("No se ha compartido el audio. Vuelve a pulsar Empezar, elige la pestaña del campus y activa «Compartir también el audio de la pestaña».");
     }
   } else {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    // Sin cancelación de eco ni supresión de ruido: borrarían la voz que sale por los altavoces o por la Mezcla estéreo.
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: source === "mic" } });
   }
   const ctx = new AudioContext();
   const src = ctx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
@@ -694,6 +705,13 @@ document.querySelectorAll(".quick button").forEach((b) => (b.onclick = () => ask
 $("clearChat").onclick = () => { const s = current(); if (s && confirm("¿Borrar la conversación de esta ponencia?")) { s.chat = []; save(); renderChat(); } };
 
 // ---------- Inicio ----------
+if (IS_FIREFOX) {
+  for (const v of ["tab", "webspeech"]) {
+    const o = $("sourceSel").querySelector(`option[value=${v}]`);
+    o.disabled = true; o.textContent += " (no disponible en Firefox)";
+  }
+  $("sourceSel").value = "system";
+}
 if (!state.sessions.length) newSession("Ponencia 1");
 if (!current()) state.currentId = state.sessions[state.sessions.length - 1].id;
 renderSessions(); renderTranscript(); renderChat();
