@@ -4,6 +4,7 @@ Arranca con arrancar.bat y abre http://127.0.0.1:8000 en Edge.
 """
 import glob
 import io
+import wave
 import os
 import site
 import subprocess
@@ -62,7 +63,8 @@ def transcriptions(
     response_format: str = Form("json"),
     temperature: str = Form("0"),
 ):
-    audio = io.BytesIO(file.file.read())
+    # El WAV llega ya a 16 kHz mono: se lee sin PyAV (algunas versiones de av rompen decode_audio).
+    audio = np.frombuffer(wave.open(io.BytesIO(file.file.read())).readframes(10**9), dtype=np.int16).astype(np.float32) / 32768.0
     with lock:
         segments, info = model.transcribe(
             audio,
