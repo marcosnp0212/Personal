@@ -196,7 +196,7 @@ const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
 const LOCAL_URL = location.protocol.startsWith("http") ? location.origin : "http://127.0.0.1:8000";
 const useLocal = () => state.settings.engine === "local";
 const LANG_LABEL = { spanish: "ES", galician: "GL", portuguese: "PT", english: "EN", catalan: "CA", es: "ES", gl: "GL" };
-const HALLUCINATIONS = [/amara\.org/i, /subt[ií]tul(os|ado|ación|ados)\s+(realizad|por|hech)/i, /gracias por (ver|vernos|su atención al v[ií]deo)/i, /suscr[ií]bete/i, /^\W*(gracias|grazas|muchas gracias|thank you)\W*$/i, /^\W*(\.\.\.|…)\W*$/];
+const HALLUCINATIONS = [/amara\.org/i, /subt[ií]tul(os|ado|ación|ados)\s+(realizad|por|hech)/i, /gracias por (ver|vernos|su atención al v[ií]deo)/i, /suscr[ií]bete/i, /^\W*(gracias|grazas|moitas grazas|muchas gracias|obrigad[oa]|thank you|thanks)\W*$/i, /^\W*(\.\.\.|…)\W*$/];
 
 // ---------- Estado persistente ----------
 const $ = (id) => document.getElementById(id);
